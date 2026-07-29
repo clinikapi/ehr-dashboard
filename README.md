@@ -1,5 +1,7 @@
 # ClinikCare EHR
 
+> Mirrored from the ClinikAPI monorepo — contribute upstream; this repo is overwritten on every sync.
+
 An open-source, responsive clinical EHR dashboard built on **[ClinikAPI](https://clinikapi.com)** — and the reference integration for the two official packages:
 
 - **[`@clinikapi/sdk`](https://www.npmjs.com/package/@clinikapi/sdk)** — server-side client. Powers every page (patient registry, charts, vitals, scheduling) from React Server Components and Server Actions.
