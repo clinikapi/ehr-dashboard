@@ -1,0 +1,10 @@
+node_modules/
+.next/
+out/
+*.tsbuildinfo
+next-env.d.ts
+
+# Never commit credentials — CLINIKAPI_KEY lives here locally
+.env
+.env.local
+.env.*.local
