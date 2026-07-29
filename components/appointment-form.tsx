@@ -1,94 +1,209 @@
 'use client';
 
 import { useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { z } from 'zod';
+import { toast } from 'sonner';
 
 import { createAppointmentAction } from '@/app/actions';
+import { useDelayedRefresh } from '@/components/auto-refresh';
+import { Button } from '@/components/ui/button';
+import { Combobox } from '@/components/ui/combobox';
+import { DateTimePicker } from '@/components/ui/datetime-picker';
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from '@/components/ui/form';
+import { Input } from '@/components/ui/input';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 
-const inputCls =
-  'w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm font-medium outline-none transition-shadow focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100';
-const labelCls = 'mb-1.5 block text-[10px] font-black uppercase tracking-widest text-slate-400';
+const DURATIONS = [15, 30, 45, 60, 90, 120];
+
+const TYPES = [
+  { value: 'routine', label: 'Routine' },
+  { value: 'followup', label: 'Follow-up' },
+  { value: 'walkin', label: 'Walk-in' },
+  { value: 'urgent', label: 'Urgent' },
+] as const;
+
+const schema = z.object({
+  patientId: z.string().min(1, 'Choose a patient'),
+  start: z.date({ required_error: 'Pick a date and time' }),
+  minutesDuration: z.coerce.number().int().min(5).max(480),
+  appointmentType: z.enum(['routine', 'followup', 'walkin', 'urgent']),
+  description: z.string().trim().max(200).optional(),
+});
+
+type FormValues = z.infer<typeof schema>;
 
 export function AppointmentForm({ patients }: { patients: Array<{ id: string; label: string }> }) {
-  const router = useRouter();
   const [saving, setSaving] = useState(false);
-  const [message, setMessage] = useState<{ tone: 'ok' | 'err'; text: string } | null>(null);
+  const refreshSoon = useDelayedRefresh();
 
-  async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    setMessage(null);
+  const form = useForm<FormValues>({
+    resolver: zodResolver(schema),
+    defaultValues: {
+      patientId: '',
+      minutesDuration: 30,
+      appointmentType: 'routine',
+      description: '',
+    },
+  });
+
+  const noPatients = patients.length === 0;
+
+  async function onSubmit(values: FormValues) {
     setSaving(true);
-    const form = new FormData(e.currentTarget);
     const result = await createAppointmentAction({
-      patientId: String(form.get('patientId') ?? ''),
-      start: String(form.get('start') ?? ''),
-      minutesDuration: Number(form.get('minutesDuration') ?? 30) || 30,
-      description: String(form.get('description') ?? '') || undefined,
-      appointmentType: String(form.get('appointmentType') ?? '') || undefined,
+      patientId: values.patientId,
+      start: values.start.toISOString(),
+      minutesDuration: values.minutesDuration,
+      description: values.description || undefined,
+      appointmentType: values.appointmentType,
     });
-    if (result.success) {
-      setMessage({ tone: 'ok', text: 'Appointment booked.' });
-      (e.target as HTMLFormElement).reset();
-      router.refresh();
-    } else {
-      setMessage({ tone: 'err', text: result.error ?? 'Could not book appointment.' });
-    }
     setSaving(false);
+
+    if (result.success) {
+      toast.success('Appointment booked', {
+        description: 'It joins the schedule as soon as the index catches up.',
+      });
+      form.reset({
+        patientId: '',
+        minutesDuration: 30,
+        appointmentType: 'routine',
+        description: '',
+        start: undefined,
+      });
+      // The schedule below is a search — a booking takes a few seconds to
+      // appear in it. Pull it back in rather than leaving a stale list.
+      refreshSoon();
+      return;
+    }
+
+    toast.error('Could not book appointment', { description: result.error });
   }
 
   return (
-    <form onSubmit={onSubmit} className="space-y-5">
-      <div className="grid gap-5 sm:grid-cols-2">
-        <div className="sm:col-span-2">
-          <label htmlFor="patientId" className={labelCls}>Patient *</label>
-          <select id="patientId" name="patientId" required className={inputCls} defaultValue="">
-            <option value="" disabled>
-              {patients.length === 0 ? 'No patients — create one first' : 'Select a patient…'}
-            </option>
-            {patients.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.label}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div>
-          <label htmlFor="start" className={labelCls}>Start *</label>
-          <input id="start" name="start" type="datetime-local" required className={inputCls} />
-        </div>
-        <div>
-          <label htmlFor="minutesDuration" className={labelCls}>Duration (min)</label>
-          <input id="minutesDuration" name="minutesDuration" type="number" min={5} max={480} defaultValue={30} className={inputCls} />
-        </div>
-        <div>
-          <label htmlFor="appointmentType" className={labelCls}>Type</label>
-          <select id="appointmentType" name="appointmentType" className={inputCls} defaultValue="routine">
-            <option value="routine">Routine</option>
-            <option value="followup">Follow-up</option>
-            <option value="walkin">Walk-in</option>
-            <option value="urgent">Urgent</option>
-          </select>
-        </div>
-        <div>
-          <label htmlFor="description" className={labelCls}>Reason</label>
-          <input id="description" name="description" className={inputCls} placeholder="Annual physical" />
-        </div>
-      </div>
+    <Form {...form}>
+      <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-5">
+        <FormField
+          control={form.control}
+          name="patientId"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>Patient</FormLabel>
+              <FormControl>
+                <Combobox
+                  options={patients.map((p) => ({ value: p.id, label: p.label }))}
+                  value={field.value}
+                  onValueChange={field.onChange}
+                  placeholder={noPatients ? 'No patients — create one first' : 'Select a patient'}
+                  emptyText="No patient matches that name."
+                />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
 
-      <div className="flex items-center gap-3">
-        <button
-          type="submit"
-          disabled={saving || patients.length === 0}
-          className="rounded-xl bg-indigo-600 px-6 py-2.5 text-sm font-black text-white shadow-lg transition-colors hover:bg-indigo-700 disabled:opacity-60"
-        >
+        <FormField
+          control={form.control}
+          name="start"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>Starts</FormLabel>
+              <FormControl>
+                <DateTimePicker date={field.value} setDate={field.onChange} />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+
+        <div className="grid gap-4 sm:grid-cols-2 sm:gap-5">
+          <FormField
+            control={form.control}
+            name="minutesDuration"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Duration</FormLabel>
+                <Select
+                  onValueChange={(v) => field.onChange(Number(v))}
+                  value={String(field.value)}
+                >
+                  <FormControl>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                  </FormControl>
+                  <SelectContent>
+                    {DURATIONS.map((d) => (
+                      <SelectItem key={d} value={String(d)}>
+                        {d} minutes
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+
+          <FormField
+            control={form.control}
+            name="appointmentType"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Type</FormLabel>
+                <Select onValueChange={field.onChange} value={field.value}>
+                  <FormControl>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                  </FormControl>
+                  <SelectContent>
+                    {TYPES.map((t) => (
+                      <SelectItem key={t.value} value={t.value}>
+                        {t.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+        </div>
+
+        <FormField
+          control={form.control}
+          name="description"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>Reason</FormLabel>
+              <FormControl>
+                <Input placeholder="Annual physical" {...field} />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+
+        <Button type="submit" disabled={saving || noPatients} className="w-full sm:w-auto">
           {saving ? 'Booking…' : 'Book appointment'}
-        </button>
-        {message && (
-          <span className={`text-xs font-bold ${message.tone === 'ok' ? 'text-emerald-600' : 'text-red-600'}`}>
-            {message.text}
-          </span>
-        )}
-      </div>
-    </form>
+        </Button>
+      </form>
+    </Form>
   );
 }

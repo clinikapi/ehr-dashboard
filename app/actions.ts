@@ -7,6 +7,7 @@
 import { revalidatePath } from 'next/cache';
 
 import { clinik } from '@/lib/clinik';
+import { normalizePatient } from '@/lib/fhir';
 
 type ActionResult<T = unknown> = { success: boolean; error?: string; data?: T };
 
@@ -21,7 +22,7 @@ export async function createPatientAction(input: {
   birthDate?: string;
   email?: string;
   phone?: string;
-}): Promise<ActionResult<{ id: string }>> {
+}): Promise<ActionResult<{ id: string; name: string }>> {
   if (!input.firstName?.trim() || !input.lastName?.trim()) {
     return { success: false, error: 'First and last name are required.' };
   }
@@ -34,9 +35,16 @@ export async function createPatientAction(input: {
       email: input.email || undefined,
       phone: input.phone || undefined,
     });
+    // `create` echoes the stored record back in the SDK's flattened shape;
+    // normalize so the caller gets a display name without knowing which of the
+    // two patient shapes it just received (see lib/fhir.ts).
+    const created = normalizePatient(res.data);
+    if (!created.id) {
+      return { success: false, error: 'Patient was created but no id came back.' };
+    }
     revalidatePath('/patients');
     revalidatePath('/');
-    return { success: true, data: { id: (res.data as any).id } };
+    return { success: true, data: { id: created.id, name: created.name } };
   } catch (err) {
     return fail(err);
   }

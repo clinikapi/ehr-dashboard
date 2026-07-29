@@ -20,7 +20,24 @@ import {
   PrescriptionForm,
   PrescriptionWidget,
   VitalsWidget,
+  type WidgetTheme,
 } from '@clinikapi/react';
+
+// The one line of setup @clinikapi/react needs. Every rule in it is scoped to
+// the widgets' own root, so it can't reach the rest of this app.
+import '@clinikapi/react/styles.css';
+
+import { cn } from '@/lib/utils';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent } from '@/components/ui/card';
+import { Label } from '@/components/ui/label';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 
 const PROXY = '/api/clinikapi';
 
@@ -31,80 +48,119 @@ interface PatientOption {
 
 const WIDGETS: Array<{
   name: string;
-  needsPatient: boolean;
-  render: (patientId: string) => React.ReactNode;
+  render: (patientId: string, theme: WidgetTheme) => React.ReactNode;
 }> = [
-  { name: 'PatientDashboard', needsPatient: true, render: (id) => <PatientDashboard proxyUrl={PROXY} patientId={id} /> },
-  { name: 'VitalsWidget', needsPatient: true, render: (id) => <VitalsWidget proxyUrl={PROXY} patientId={id} /> },
-  { name: 'LabResultsWidget', needsPatient: true, render: (id) => <LabResultsWidget proxyUrl={PROXY} patientId={id} /> },
-  { name: 'PrescriptionWidget', needsPatient: true, render: (id) => <PrescriptionWidget proxyUrl={PROXY} patientId={id} /> },
-  { name: 'PrescriptionForm', needsPatient: true, render: (id) => <PrescriptionForm proxyUrl={PROXY} patientId={id} /> },
-  { name: 'AppointmentScheduler', needsPatient: true, render: (id) => <AppointmentScheduler proxyUrl={PROXY} patientId={id} /> },
-  { name: 'IntakeForm', needsPatient: true, render: (id) => <IntakeForm proxyUrl={PROXY} patientId={id} /> },
-  { name: 'ConsentManager', needsPatient: true, render: (id) => <ConsentManager proxyUrl={PROXY} patientId={id} /> },
-  { name: 'NoteEditor', needsPatient: true, render: (id) => <NoteEditor proxyUrl={PROXY} patientId={id} /> },
-  { name: 'ConditionTracker', needsPatient: true, render: (id) => <ConditionTracker proxyUrl={PROXY} patientId={id} /> },
-  { name: 'AllergyRecorder', needsPatient: true, render: (id) => <AllergyRecorder proxyUrl={PROXY} patientId={id} /> },
-  { name: 'ImmunizationLogger', needsPatient: true, render: (id) => <ImmunizationLogger proxyUrl={PROXY} patientId={id} /> },
-  { name: 'CarePlanBuilder', needsPatient: true, render: (id) => <CarePlanBuilder proxyUrl={PROXY} patientId={id} /> },
-  { name: 'GoalSetter', needsPatient: true, render: (id) => <GoalSetter proxyUrl={PROXY} patientId={id} /> },
+  { name: 'PatientDashboard', render: (id, t) => <PatientDashboard proxyUrl={PROXY} patientId={id} theme={t as 'light' | 'dark' | 'glassmorphism'} /> },
+  { name: 'VitalsWidget', render: (id, t) => <VitalsWidget proxyUrl={PROXY} patientId={id} theme={t} /> },
+  { name: 'LabResultsWidget', render: (id, t) => <LabResultsWidget proxyUrl={PROXY} patientId={id} theme={t} /> },
+  { name: 'PrescriptionWidget', render: (id, t) => <PrescriptionWidget proxyUrl={PROXY} patientId={id} theme={t} /> },
+  { name: 'PrescriptionForm', render: (id, t) => <PrescriptionForm proxyUrl={PROXY} patientId={id} theme={t} /> },
+  { name: 'AppointmentScheduler', render: (id, t) => <AppointmentScheduler proxyUrl={PROXY} patientId={id} theme={t} /> },
+  { name: 'IntakeForm', render: (id, t) => <IntakeForm proxyUrl={PROXY} patientId={id} theme={t} /> },
+  { name: 'ConsentManager', render: (id, t) => <ConsentManager proxyUrl={PROXY} patientId={id} theme={t} /> },
+  { name: 'NoteEditor', render: (id, t) => <NoteEditor proxyUrl={PROXY} patientId={id} theme={t} /> },
+  { name: 'ConditionTracker', render: (id, t) => <ConditionTracker proxyUrl={PROXY} patientId={id} theme={t} /> },
+  { name: 'AllergyRecorder', render: (id, t) => <AllergyRecorder proxyUrl={PROXY} patientId={id} theme={t} /> },
+  { name: 'ImmunizationLogger', render: (id, t) => <ImmunizationLogger proxyUrl={PROXY} patientId={id} theme={t} /> },
+  { name: 'CarePlanBuilder', render: (id, t) => <CarePlanBuilder proxyUrl={PROXY} patientId={id} theme={t} /> },
+  { name: 'GoalSetter', render: (id, t) => <GoalSetter proxyUrl={PROXY} patientId={id} theme={t} /> },
+];
+
+const THEMES: Array<{ value: WidgetTheme; label: string }> = [
+  { value: 'light', label: 'Light' },
+  { value: 'dark', label: 'Dark' },
+  { value: 'glassmorphism', label: 'Glass' },
+  { value: 'inherit', label: 'Inherit app theme' },
 ];
 
 export function WidgetGallery({ patients }: { patients: PatientOption[] }) {
   const [patientId, setPatientId] = useState<string>(patients[0]?.id ?? '');
   const [active, setActive] = useState<string>(WIDGETS[0].name);
+  const [theme, setTheme] = useState<WidgetTheme>('light');
 
   const widget = WIDGETS.find((w) => w.name === active) ?? WIDGETS[0];
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-        <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">
-          Patient context
-        </label>
-        <select
-          value={patientId}
-          onChange={(e) => setPatientId(e.target.value)}
-          className="w-full max-w-sm rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm font-medium outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
-        >
-          {patients.length === 0 && <option value="">No patients — create one first</option>}
-          {patients.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.label} ({p.id})
-            </option>
-          ))}
-        </select>
+      <div className="grid gap-4 sm:grid-cols-2">
+        <div className="space-y-1.5">
+          <Label htmlFor="patient-context">Patient context</Label>
+          <Select value={patientId} onValueChange={setPatientId}>
+            <SelectTrigger id="patient-context">
+              <SelectValue
+                placeholder={
+                  patients.length === 0 ? 'No patients — create one first' : 'Select a patient'
+                }
+              />
+            </SelectTrigger>
+            <SelectContent>
+              {patients.map((p) => (
+                <SelectItem key={p.id} value={p.id}>
+                  {p.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div className="space-y-1.5">
+          <Label htmlFor="widget-theme">Widget theme</Label>
+          <Select value={theme} onValueChange={(v) => setTheme(v as WidgetTheme)}>
+            <SelectTrigger id="widget-theme">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {THEMES.map((t) => (
+                <SelectItem key={t.value} value={t.value}>
+                  {t.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
       </div>
 
       <div className="flex flex-wrap gap-2">
         {WIDGETS.map((w) => (
-          <button
+          <Button
             key={w.name}
+            type="button"
+            size="sm"
+            variant={active === w.name ? 'default' : 'outline'}
             onClick={() => setActive(w.name)}
-            className={`rounded-full border px-3.5 py-1.5 text-xs font-bold transition-colors ${
-              active === w.name
-                ? 'border-indigo-600 bg-indigo-600 text-white'
-                : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'
-            }`}
+            className={cn('rounded-full text-xs', active !== w.name && 'text-muted-foreground')}
           >
             {w.name}
-          </button>
+          </Button>
         ))}
       </div>
 
-      <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
-        <p className="mb-4 font-mono text-[11px] font-bold text-slate-400">
-          {'<'}
-          {widget.name} proxyUrl=&quot;{PROXY}&quot; patientId=&quot;{patientId || '—'}&quot;{' />'}
-        </p>
-        {widget.needsPatient && !patientId ? (
-          <p className="py-8 text-center text-sm font-medium text-slate-400">
-            Create a patient first, then pick one above to mount this widget.
+      <Card>
+        <CardContent className="p-4 sm:p-6">
+          <p className="mb-4 overflow-x-auto font-mono text-[11px] text-muted-foreground">
+            {'<'}
+            {widget.name} proxyUrl=&quot;{PROXY}&quot; patientId=&quot;{patientId || '—'}&quot;
+            {theme !== 'light' ? ` theme="${theme}"` : ''}
+            {' />'}
           </p>
-        ) : (
-          <div key={`${widget.name}-${patientId}`}>{widget.render(patientId)}</div>
-        )}
-      </div>
+          {!patientId ? (
+            <p className="py-8 text-center text-sm text-muted-foreground">
+              Create a patient first, then pick one above to mount this widget.
+            </p>
+          ) : (
+            <div
+              key={`${widget.name}-${patientId}-${theme}`}
+              className={cn(
+                'flex justify-center rounded-lg p-4 sm:p-6',
+                theme === 'light' && 'bg-muted/40',
+                (theme === 'dark' || theme === 'glassmorphism') && 'bg-slate-900',
+              )}
+            >
+              {widget.render(patientId, theme)}
+            </div>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }

@@ -5,17 +5,34 @@ import { HugeiconsIcon } from '@hugeicons/react';
 import { PlusSignIcon, Search01Icon, UserGroupIcon } from '@hugeicons/core-free-icons';
 
 import { clinik, isConfigured } from '@/lib/clinik';
-import { age, humanName, initials, telecom } from '@/lib/fhir';
-import { Card, EmptyState, PageHeader, SetupNotice } from '@/components/ui';
+import { normalizePatient, type PatientSummary } from '@/lib/fhir';
+import { readPatientById } from '@/lib/patients';
+import { AutoRefresh } from '@/components/auto-refresh';
+import { EmptyState, IndexingNotice, PageHeader, SetupNotice } from '@/components/app-ui';
+import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
 
 export const dynamic = 'force-dynamic';
+
+type Row = PatientSummary & { pending?: boolean };
 
 export default async function PatientsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string }>;
+  searchParams: Promise<{ q?: string; new?: string }>;
 }) {
-  const { q } = await searchParams;
+  const { q, new: newId } = await searchParams;
 
   if (!isConfigured()) {
     return (
@@ -30,7 +47,21 @@ export default async function PatientsPage({
     count: 25,
     ...(q ? { name: q } : {}),
   });
-  const patients = res.data.data ?? [];
+
+  const rows: Row[] = (res.data.data ?? []).map((p) =>
+    normalizePatient(p),
+  );
+
+  // A patient created seconds ago is readable by id but not yet findable by
+  // search (HealthLake index lag — see lib/patients.ts). Rather than let the
+  // list look like the record was lost, fetch it directly and mark it pending.
+  let pendingRow: Row | null = null;
+  if (newId && !rows.some((r) => r.id === newId)) {
+    const fresh = await readPatientById(newId);
+    if (fresh) pendingRow = { ...normalizePatient(fresh), pending: true };
+  }
+
+  const patients: Row[] = pendingRow ? [pendingRow, ...rows] : rows;
 
   return (
     <>
@@ -38,12 +69,11 @@ export default async function PatientsPage({
         title="Patients"
         subtitle={q ? `Search results for “${q}”` : 'Everyone registered in your datastore.'}
         action={
-          <Link
-            href="/patients/new"
-            className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-xs font-black text-white shadow-lg transition-colors hover:bg-slate-800"
-          >
-            <HugeiconsIcon icon={PlusSignIcon} size={15} /> New patient
-          </Link>
+          <Button asChild className="w-full sm:w-auto">
+            <Link href="/patients/new">
+              <HugeiconsIcon icon={PlusSignIcon} size={16} /> New patient
+            </Link>
+          </Button>
         }
       />
 
@@ -52,62 +82,121 @@ export default async function PatientsPage({
           <HugeiconsIcon
             icon={Search01Icon}
             size={16}
-            className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400"
+            className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"
           />
-          <input
+          <Input
             name="q"
             defaultValue={q ?? ''}
             placeholder="Search by name…"
-            className="w-full rounded-xl border border-slate-200 bg-white py-2.5 pl-10 pr-4 text-sm font-medium outline-none transition-shadow focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
+            aria-label="Search patients by name"
+            className="pl-9"
           />
         </div>
-        <button className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-xs font-black text-slate-600 transition-colors hover:bg-slate-50">
+        <Button type="submit" variant="outline">
           Search
-        </button>
+        </Button>
       </form>
+
+      {pendingRow && (
+        <>
+          <IndexingNotice>
+            <strong className="font-semibold">{pendingRow.name}</strong> was just created. It takes a
+            few seconds to appear in search results — this list is refreshing itself.
+          </IndexingNotice>
+          <AutoRefresh />
+        </>
+      )}
 
       {patients.length === 0 ? (
         <EmptyState
           icon={UserGroupIcon}
           title={q ? 'No patients match that search' : 'No patients yet'}
           hint={q ? 'Try a different name.' : 'Create your first patient to get started.'}
+          action={
+            !q && (
+              <Button asChild size="sm">
+                <Link href="/patients/new">New patient</Link>
+              </Button>
+            )
+          }
         />
       ) : (
-        <Card className="!p-0">
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[560px] text-left">
-              <thead>
-                <tr className="border-b border-slate-100 text-[10px] font-black uppercase tracking-widest text-slate-400">
-                  <th className="px-5 py-3">Patient</th>
-                  <th className="px-5 py-3">Demographics</th>
-                  <th className="px-5 py-3">Contact</th>
-                  <th className="px-5 py-3">ID</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-50">
-                {patients.map((p: any) => (
-                  <tr key={p.id} className="group transition-colors hover:bg-slate-50">
-                    <td className="px-5 py-3.5">
-                      <Link href={`/patients/${p.id}`} className="flex items-center gap-3">
-                        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-indigo-50 text-xs font-black text-indigo-600">
-                          {initials(p)}
-                        </span>
-                        <span className="text-sm font-bold group-hover:text-indigo-600">{humanName(p)}</span>
-                      </Link>
-                    </td>
-                    <td className="px-5 py-3.5 text-xs font-medium capitalize text-slate-500">
-                      {[p.gender, age(p.birthDate)].filter(Boolean).join(' · ') || '—'}
-                    </td>
-                    <td className="px-5 py-3.5 text-xs font-medium text-slate-500">
-                      {telecom(p, 'email') ?? telecom(p, 'phone') ?? '—'}
-                    </td>
-                    <td className="px-5 py-3.5 font-mono text-[11px] text-slate-400">{p.id}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+        <>
+          {/* Mobile: stacked cards — a 4-column table can't be read at 375px. */}
+          <div className="space-y-3 md:hidden">
+            {patients.map((p) => (
+              <Card key={p.id} className="p-4">
+                <Link href={`/patients/${p.id}`} className="flex items-center gap-3">
+                  <Avatar className="h-10 w-10 shrink-0">
+                    <AvatarFallback className="bg-accent text-xs font-semibold text-accent-foreground">
+                      {p.initials}
+                    </AvatarFallback>
+                  </Avatar>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className="truncate font-semibold">{p.name}</span>
+                      {p.pending && (
+                        <Badge variant="outline" className="shrink-0 text-[10px]">
+                          Indexing
+                        </Badge>
+                      )}
+                    </div>
+                    <p className="truncate text-xs capitalize text-muted-foreground">
+                      {p.demographics}
+                    </p>
+                    <p className="truncate text-xs text-muted-foreground">
+                      {p.email ?? p.phone ?? '—'}
+                    </p>
+                  </div>
+                </Link>
+              </Card>
+            ))}
           </div>
-        </Card>
+
+          {/* Desktop */}
+          <Card className="hidden overflow-hidden md:block">
+            <Table>
+              <TableHeader>
+                <TableRow className="hover:bg-transparent">
+                  <TableHead>Patient</TableHead>
+                  <TableHead>Demographics</TableHead>
+                  <TableHead>Contact</TableHead>
+                  <TableHead className="text-right">ID</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {patients.map((p) => (
+                  <TableRow key={p.id} className="group">
+                    <TableCell className="py-3">
+                      <Link href={`/patients/${p.id}`} className="flex items-center gap-3">
+                        <Avatar className="h-9 w-9 shrink-0">
+                          <AvatarFallback className="bg-accent text-xs font-semibold text-accent-foreground">
+                            {p.initials}
+                          </AvatarFallback>
+                        </Avatar>
+                        <span className="font-semibold group-hover:text-primary">{p.name}</span>
+                        {p.pending && (
+                          <Badge variant="outline" className="text-[10px]">
+                            Indexing
+                          </Badge>
+                        )}
+                      </Link>
+                    </TableCell>
+                    <TableCell className="capitalize text-muted-foreground">
+                      {p.demographics}
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">
+                      {p.email ?? p.phone ?? '—'}
+                    </TableCell>
+                    <TableCell className="text-right font-mono text-xs text-muted-foreground">
+                      {p.id}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </Card>
+        </>
       )}
     </>
   );

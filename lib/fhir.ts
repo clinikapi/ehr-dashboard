@@ -1,31 +1,117 @@
-// Display helpers for FHIR R4 resources.
+// Display helpers for ClinikAPI resources.
 //
-// ClinikAPI accepts simplified JSON on write but returns real FHIR resources
-// on read — these helpers turn the FHIR shapes into human-readable strings so
-// the UI never renders "[object Object]". They are deliberately defensive:
-// every field in FHIR is optional.
+// ⚠️ Two shapes, one resource. ClinikAPI returns Patient in two different
+// shapes depending on the endpoint, and code that assumes one shape silently
+// renders blanks against the other:
+//
+//   • `patients.search()` and `patients.read(id)` (no includes) return the
+//     SDK's FLATTENED projection — { id, firstName, lastName, email, phone,
+//     gender, birthDate }. There is no `name[]` and no `telecom[]`.
+//   • `patients.read(id, { include: [...] })` and the raw `/fhir/Patient/{id}`
+//     passthrough return a genuine FHIR R4 Patient — `name[]`, `telecom[]`.
+//
+// Reading `resource.name[0]` therefore works on a chart page and yields
+// "Unnamed" on every list. `normalizePatient()` below accepts EITHER shape and
+// is the only thing the UI should use to display a patient.
+//
+// Every other helper is deliberately defensive too: in FHIR, every field is
+// optional.
 
 type Fhir = Record<string, any>;
 
-export function humanName(resource: Fhir | undefined | null): string {
-  const name = resource?.name?.[0];
-  if (!name) return 'Unnamed';
-  if (name.text) return name.text;
-  const given = Array.isArray(name.given) ? name.given.join(' ') : '';
-  return [given, name.family].filter(Boolean).join(' ') || 'Unnamed';
+/** Canonical, render-ready view of a patient — shape-agnostic. */
+export interface PatientSummary {
+  id: string;
+  /** Display name, or `Unnamed patient` when the record genuinely has none. */
+  name: string;
+  /** False when the record carries no name at all (vs. one we failed to read). */
+  hasName: boolean;
+  initials: string;
+  email: string | null;
+  phone: string | null;
+  gender: string | null;
+  birthDate: string | null;
+  /** e.g. `34y` */
+  age: string | null;
+  /** e.g. `female · 34y`, or `—` when nothing is recorded. */
+  demographics: string;
 }
 
-export function initials(resource: Fhir | undefined | null): string {
-  const parts = humanName(resource).split(/\s+/).filter(Boolean);
-  return parts
-    .slice(0, 2)
-    .map((p) => p[0]?.toUpperCase() ?? '')
-    .join('') || '?';
+const UNNAMED = 'Unnamed patient';
+
+/**
+ * Accepts a FHIR Patient, the SDK's flattened patient, or null.
+ *
+ * Typed as `unknown` on purpose: the SDK declares `patients.search()` as
+ * returning FHIR `Patient[]` but actually sends the flattened shape, so no
+ * single declared type is honest here. Callers pass whatever they got.
+ */
+export function normalizePatient(resource: unknown): PatientSummary {
+  const r = (resource ?? {}) as Fhir;
+
+  // FHIR shape — name: [{ text?, given?: string[], family? }]
+  const fhirName = Array.isArray(r.name) ? r.name[0] : undefined;
+  const fromFhir = fhirName
+    ? fhirName.text ||
+      [Array.isArray(fhirName.given) ? fhirName.given.join(' ') : '', fhirName.family]
+        .filter(Boolean)
+        .join(' ')
+    : '';
+
+  // Flattened shape. `fullName` is the API's own display name (added so the
+  // projection stops losing `name.text` and middle names); firstName/lastName
+  // remain the fallback for records served by an older API build.
+  const fromFlat =
+    typeof r.fullName === 'string' && r.fullName
+      ? r.fullName
+      : typeof r.name === 'string'
+        ? r.name
+        : [r.firstName, r.middleName, r.lastName].filter(Boolean).join(' ');
+
+  const name = (fromFhir || fromFlat).trim();
+
+  const parts = name.split(/\s+/).filter(Boolean);
+  const initials =
+    parts
+      .slice(0, 2)
+      .map((p: string) => p[0]?.toUpperCase() ?? '')
+      .join('') || '?';
+
+  const gender = r.gender ?? null;
+  const birthDate = r.birthDate ?? null;
+  const years = age(birthDate);
+
+  return {
+    id: r.id ?? '',
+    name: name || UNNAMED,
+    hasName: Boolean(name),
+    initials,
+    email: telecom(r, 'email'),
+    phone: telecom(r, 'phone'),
+    gender,
+    birthDate,
+    age: years,
+    demographics: [gender, years].filter(Boolean).join(' · ') || '—',
+  };
 }
 
-export function telecom(resource: Fhir | undefined | null, system: 'email' | 'phone'): string | null {
-  const entry = resource?.telecom?.find((t: Fhir) => t.system === system);
-  return entry?.value ?? null;
+/** Display name for either patient shape. Prefer `normalizePatient` in new code. */
+export function humanName(resource: unknown): string {
+  return normalizePatient(resource).name;
+}
+
+/** Up-to-two-letter initials for either patient shape. */
+export function initials(resource: unknown): string {
+  return normalizePatient(resource).initials;
+}
+
+/** Reads a contact point from either the FHIR `telecom[]` or the flat field. */
+export function telecom(resource: unknown, system: 'email' | 'phone'): string | null {
+  const r = (resource ?? {}) as Fhir;
+  const entry = Array.isArray(r.telecom)
+    ? r.telecom.find((t: Fhir) => t.system === system)
+    : undefined;
+  return entry?.value ?? r[system] ?? null;
 }
 
 export function age(birthDate: string | undefined | null): string | null {
@@ -100,23 +186,27 @@ export function resourceDate(r: Fhir): string {
   );
 }
 
-const STATUS_TONES: Record<string, string> = {
-  active: 'bg-emerald-50 text-emerald-700 border-emerald-200',
-  final: 'bg-emerald-50 text-emerald-700 border-emerald-200',
-  completed: 'bg-emerald-50 text-emerald-700 border-emerald-200',
-  fulfilled: 'bg-emerald-50 text-emerald-700 border-emerald-200',
-  booked: 'bg-indigo-50 text-indigo-700 border-indigo-200',
-  planned: 'bg-indigo-50 text-indigo-700 border-indigo-200',
-  proposed: 'bg-amber-50 text-amber-700 border-amber-200',
-  pending: 'bg-amber-50 text-amber-700 border-amber-200',
-  preliminary: 'bg-amber-50 text-amber-700 border-amber-200',
-  draft: 'bg-amber-50 text-amber-700 border-amber-200',
-  cancelled: 'bg-red-50 text-red-700 border-red-200',
-  'entered-in-error': 'bg-red-50 text-red-700 border-red-200',
-  stopped: 'bg-red-50 text-red-700 border-red-200',
-  noshow: 'bg-red-50 text-red-700 border-red-200',
+/** Badge variant for a FHIR status code — consumed by `<StatusBadge>`. */
+export type StatusTone = 'success' | 'info' | 'warning' | 'danger' | 'neutral';
+
+const STATUS_TONES: Record<string, StatusTone> = {
+  active: 'success',
+  final: 'success',
+  completed: 'success',
+  fulfilled: 'success',
+  booked: 'info',
+  planned: 'info',
+  arrived: 'info',
+  proposed: 'warning',
+  pending: 'warning',
+  preliminary: 'warning',
+  draft: 'warning',
+  cancelled: 'danger',
+  'entered-in-error': 'danger',
+  stopped: 'danger',
+  noshow: 'danger',
 };
 
-export function statusTone(status: string | undefined | null): string {
-  return STATUS_TONES[status ?? ''] ?? 'bg-slate-50 text-slate-600 border-slate-200';
+export function statusTone(status: string | undefined | null): StatusTone {
+  return STATUS_TONES[status ?? ''] ?? 'neutral';
 }

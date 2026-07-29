@@ -4,9 +4,10 @@ import { HugeiconsIcon } from '@hugeicons/react';
 import { Calendar03Icon } from '@hugeicons/core-free-icons';
 
 import { clinik, isConfigured } from '@/lib/clinik';
-import { fmtDateTime, humanName } from '@/lib/fhir';
+import { fmtDateTime, normalizePatient } from '@/lib/fhir';
 import { AppointmentForm } from '@/components/appointment-form';
-import { Card, EmptyState, PageHeader, SectionTitle, SetupNotice, StatusBadge } from '@/components/ui';
+import { EmptyState, PageHeader, SectionTitle, SetupNotice, StatusBadge } from '@/components/app-ui';
+import { Card, CardContent } from '@/components/ui/card';
 
 export const dynamic = 'force-dynamic';
 
@@ -26,20 +27,22 @@ export default async function AppointmentsPage() {
     c.patients.search({ count: 100 }),
   ]);
   const appointments = apptRes.data.data ?? [];
-  const patients = (patientRes.data.data ?? []).map((p: any) => ({
-    id: p.id as string,
-    label: humanName(p),
-  }));
+  const patients = (patientRes.data.data ?? []).map((p) => {
+    const s = normalizePatient(p);
+    return { id: s.id, label: s.name };
+  });
 
   return (
     <>
       <PageHeader title="Appointments" subtitle="Book visits and review the schedule." />
 
-      <div className="grid gap-8 lg:grid-cols-5">
+      <div className="grid gap-6 lg:grid-cols-5 lg:gap-8">
         <section className="lg:col-span-2">
           <SectionTitle>Book an appointment</SectionTitle>
           <Card>
-            <AppointmentForm patients={patients} />
+            <CardContent className="p-5 sm:p-6">
+              <AppointmentForm patients={patients} />
+            </CardContent>
           </Card>
         </section>
 
@@ -52,17 +55,22 @@ export default async function AppointmentsPage() {
               hint="Book the first appointment with the form."
             />
           ) : (
-            <Card className="!p-0">
-              <ul className="divide-y divide-slate-50">
+            <Card className="overflow-hidden">
+              <ul className="divide-y">
                 {appointments.map((a: any) => (
-                  <li key={a.id} className="flex items-center justify-between gap-4 px-5 py-4">
+                  <li
+                    key={a.id}
+                    className="flex items-center justify-between gap-4 px-4 py-3 sm:px-5 sm:py-4"
+                  >
                     <div className="flex min-w-0 items-center gap-3">
-                      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600">
+                      <span className="hidden h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-accent text-accent-foreground sm:flex">
                         <HugeiconsIcon icon={Calendar03Icon} size={18} />
                       </span>
                       <div className="min-w-0">
-                        <p className="truncate text-sm font-bold">{a.description || 'Appointment'}</p>
-                        <p className="text-xs font-medium text-slate-400">
+                        <p className="truncate text-sm font-semibold">
+                          {a.description || 'Appointment'}
+                        </p>
+                        <p className="truncate text-xs text-muted-foreground">
                           {fmtDateTime(a.start)}
                           {a.minutesDuration ? ` · ${a.minutesDuration} min` : ''}
                           {a.appointmentType?.text ? ` · ${a.appointmentType.text}` : ''}

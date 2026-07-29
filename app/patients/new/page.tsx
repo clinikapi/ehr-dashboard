@@ -1,5 +1,6 @@
 import { PatientForm } from '@/components/patient-form';
-import { Card, PageHeader, SetupNotice } from '@/components/ui';
+import { PageHeader, SetupNotice } from '@/components/app-ui';
+import { Card, CardContent } from '@/components/ui/card';
 import { isConfigured } from '@/lib/clinik';
 
 export default function NewPatientPage() {
@@ -12,13 +13,12 @@ export default function NewPatientPage() {
     );
   }
   return (
-    <div className="max-w-2xl">
-      <PageHeader
-        title="New patient"
-        subtitle="Simplified JSON in — the platform transforms it to a FHIR R4 Patient."
-      />
+    <div className="mx-auto max-w-2xl">
+      <PageHeader title="New patient" subtitle="Register someone in your FHIR datastore." />
       <Card>
-        <PatientForm />
+        <CardContent className="p-5 sm:p-6">
+          <PatientForm />
+        </CardContent>
       </Card>
     </div>
   );

@@ -2,9 +2,9 @@
 // backend proxy. This is the reference for the proxyUrl integration pattern:
 // widgets run in the browser with no credentials; the proxy holds the key.
 import { clinik, isConfigured } from '@/lib/clinik';
-import { humanName } from '@/lib/fhir';
+import { normalizePatient } from '@/lib/fhir';
 import { WidgetGallery } from '@/components/widget-gallery';
-import { PageHeader, SetupNotice } from '@/components/ui';
+import { PageHeader, SetupNotice } from '@/components/app-ui';
 
 export const dynamic = 'force-dynamic';
 
@@ -19,10 +19,10 @@ export default async function WidgetsPage() {
   }
 
   const res = await clinik().patients.search({ count: 50 });
-  const patients = (res.data.data ?? []).map((p: any) => ({
-    id: p.id as string,
-    label: humanName(p),
-  }));
+  const patients = (res.data.data ?? []).map((p) => {
+    const s = normalizePatient(p);
+    return { id: s.id, label: s.name };
+  });
 
   return (
     <>
