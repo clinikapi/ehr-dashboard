@@ -92,7 +92,10 @@ export function VitalsForm({ patientId }: { patientId: string }) {
   return (
     <Form {...form}>
       <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+        {/* This form lives in a ~1/3-page column on desktop — five columns
+            there squeezes each input below its own placeholder. Two across is
+            the widest that stays legible at every breakpoint. */}
+        <div className="grid grid-cols-2 gap-3">
           {FIELDS.map((f) => (
             <FormField
               key={f.name}

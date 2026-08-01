@@ -41,11 +41,31 @@ export interface PatientChart {
   labs: any[];
   notes: any[];
   encounters: any[];
+  conditions: any[];
+  allergies: any[];
+  immunizations: any[];
+  carePlans: any[];
+  goals: any[];
+  consents: any[];
+  intakes: any[];
   /**
    * True when the search index hadn't caught up and we served the patient from
    * a direct read — the related-resource lists are not authoritative yet.
    */
   indexing: boolean;
+}
+
+/**
+ * Keep only rows that really belong to this patient.
+ *
+ * Defense-in-depth for two server-side search quirks: HealthLake appends an
+ * OperationOutcome entry to warned searches (it surfaced here as a phantom
+ * row with an empty id), and resource types without a `subject` search param
+ * used to come back unfiltered — i.e. containing OTHER patients' rows.
+ */
+function forPatient(rows: unknown, patientId: string): any[] {
+  if (!Array.isArray(rows)) return [];
+  return rows.filter((r) => r && r.id && r.patientId === patientId);
 }
 
 /**
@@ -80,9 +100,34 @@ export async function readPatientById(id: string): Promise<Record<string, any> |
 export async function getPatientChart(id: string): Promise<PatientChart | null> {
   if (!isValidFhirId(id)) return null;
 
-  const bundle = await clinik()
-    .patients.read(id, { include: [...CHART_INCLUDES] })
-    .catch(() => null);
+  const c = clinik();
+  // The rich bundle plus one search per widget-writable resource, all in
+  // parallel. Every search degrades to an empty list on failure — one flaky
+  // resource must never blank the whole chart.
+  const search = <T>(p: Promise<{ data: { data?: T[] } }>): Promise<T[] | null> =>
+    p.then((r) => r.data.data ?? []).catch(() => null);
+
+  const [bundle, conditions, allergies, immunizations, carePlans, goals, consents, intakes] =
+    await Promise.all([
+      c.patients.read(id, { include: [...CHART_INCLUDES] }).catch(() => null),
+      search(c.conditions.search({ patientId: id, count: 50 })),
+      search(c.allergies.search({ patientId: id, count: 50 })),
+      search(c.immunizations.search({ patientId: id, count: 50 })),
+      search(c.carePlans.search({ patientId: id, count: 50 })),
+      search(c.goals.search({ patientId: id, count: 50 })),
+      search(c.consents.search({ patientId: id, count: 50 })),
+      search(c.intakes.search({ patientId: id, count: 50 })),
+    ]);
+
+  const searched = {
+    conditions: forPatient(conditions, id),
+    allergies: forPatient(allergies, id),
+    immunizations: forPatient(immunizations, id),
+    carePlans: forPatient(carePlans, id),
+    goals: forPatient(goals, id),
+    consents: forPatient(consents, id),
+    intakes: forPatient(intakes, id),
+  };
 
   const fromBundle = bundle?.data;
   if (fromBundle?.patient) {
@@ -94,6 +139,7 @@ export async function getPatientChart(id: string): Promise<PatientChart | null> 
       labs: fromBundle.labs ?? [],
       notes: fromBundle.notes ?? [],
       encounters: fromBundle.encounters ?? [],
+      ...searched,
       indexing: false,
     };
   }
@@ -109,6 +155,7 @@ export async function getPatientChart(id: string): Promise<PatientChart | null> 
     labs: [],
     notes: [],
     encounters: [],
+    ...searched,
     indexing: true,
   };
 }
