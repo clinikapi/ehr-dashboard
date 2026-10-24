@@ -39,19 +39,21 @@ const TYPES = [
 
 const schema = z.object({
   patientId: z.string().min(1, 'Choose a patient'),
-  start: z.date({ required_error: 'Pick a date and time' }),
+  start: z.date({ error: 'Pick a date and time' }),
   minutesDuration: z.coerce.number().int().min(5).max(480),
   appointmentType: z.enum(['routine', 'followup', 'walkin', 'urgent']),
   description: z.string().trim().max(200).optional(),
 });
 
-type FormValues = z.infer<typeof schema>;
+// z.coerce makes the field's INPUT type `unknown` in Zod 4, so the form is typed input -> output.
+type FormInput = z.input<typeof schema>;
+type FormValues = z.output<typeof schema>;
 
 export function AppointmentForm({ patients }: { patients: Array<{ id: string; label: string }> }) {
   const [saving, setSaving] = useState(false);
   const refreshSoon = useDelayedRefresh();
 
-  const form = useForm<FormValues>({
+  const form = useForm<FormInput, unknown, FormValues>({
     resolver: zodResolver(schema),
     defaultValues: {
       patientId: '',

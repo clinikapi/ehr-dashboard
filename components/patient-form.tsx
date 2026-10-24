@@ -40,7 +40,7 @@ const schema = z.object({
   lastName: z.string().trim().min(1, 'Last name is required').max(100),
   gender: z.enum(['female', 'male', 'other', 'unknown']).optional(),
   birthDate: z.string().optional(),
-  email: z.string().trim().email('Enter a valid email').optional().or(z.literal('')),
+  email: z.string().trim().pipe(z.email('Enter a valid email')).optional().or(z.literal('')),
   phone: z.string().trim().max(30).optional(),
 });
 
