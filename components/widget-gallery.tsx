@@ -4,7 +4,7 @@
 // (/api/clinikapi). This page doubles as the package's live test surface:
 // each widget renders, and every action it fires flows browser → proxy →
 // @clinikapi/sdk → api.clinikapi.com.
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   AllergyRecorder,
   AppointmentScheduler,
@@ -77,6 +77,12 @@ export function WidgetGallery({ patients }: { patients: PatientOption[] }) {
   const [patientId, setPatientId] = useState<string>(patients[0]?.id ?? '');
   const [active, setActive] = useState<string>(WIDGETS[0].name);
   const [theme, setTheme] = useState<WidgetTheme>('light');
+
+  // Deep link: /widgets?widget=VitalsWidget opens that widget (the ClinikAPI UI library links here per component).
+  useEffect(() => {
+    const wanted = new URLSearchParams(window.location.search).get('widget');
+    if (wanted && WIDGETS.some((w) => w.name === wanted)) setActive(wanted);
+  }, []);
 
   const widget = WIDGETS.find((w) => w.name === active) ?? WIDGETS[0];
 

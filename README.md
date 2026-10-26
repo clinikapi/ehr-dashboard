@@ -9,6 +9,8 @@ An open-source, responsive clinical EHR dashboard built on **[ClinikAPI](https:/
 
 You send simplified JSON; ClinikAPI stores standards-compliant FHIR R4. This app shows both directions: friendly writes, real FHIR reads rendered with defensive display helpers.
 
+**Live demo:** [ehr-dashboard-seven.vercel.app](https://ehr-dashboard-seven.vercel.app) · open any widget directly, e.g. [`/widgets?widget=VitalsWidget`](https://ehr-dashboard-seven.vercel.app/widgets?widget=VitalsWidget). It runs on a ClinikAPI **test** key against the sandbox, so every patient in it is fictional.
+
 ## Features
 
 - **Overview** — live patient and appointment stats, recent activity
